@@ -1,52 +1,71 @@
-// 获取页面上的核心元素：聊天框、输入框、提问按钮
+// 获取页面元素
 const chatBox = document.getElementById('chatBox');
 const questionInput = document.getElementById('questionInput');
 const sendBtn = document.getElementById('sendBtn');
-
-// 后端接口地址（和你Flask启动的地址一致，不用改）
+const clearBtn = document.getElementById('clearBtn'); // 新增：清空按钮
 const API_URL = 'http://localhost:5000/api/qa';
 
-// 核心函数：发送问题到后端
+// 核心：清空聊天历史
+function clearChatHistory() {
+    // 清空聊天框，恢复初始欢迎语
+    chatBox.innerHTML = `
+        <div class="message system-message">
+            你好！我是医疗问答助手，请问有什么感冒相关的问题想要问我？
+        </div>
+    `;
+    // 滚动到顶部
+    chatBox.scrollTop = 0;
+}
+
+// 核心：关键词高亮（感冒、症状、治疗、发烧、咳嗽等）
+function highlightKeywords(content) {
+    const keywords = ['感冒', '症状', '治疗', '发烧', '咳嗽', '鼻塞', '流涕', '头痛', '退烧药', '抗生素'];
+    let highlightedContent = content;
+    keywords.forEach(keyword => {
+        // 替换关键词为高亮样式
+        highlightedContent = highlightedContent.replace(
+            new RegExp(keyword, 'g'),
+            `<span class="highlight">${keyword}</span>`
+        );
+    });
+    return highlightedContent;
+}
+
+// 发送问题到后端
 async function sendQuestion() {
-    // 1. 获取用户输入的问题，去掉首尾空格
     const question = questionInput.value.trim();
     if (!question) {
         alert('请输入要提问的问题！');
         return;
     }
 
-    // 2. 禁用按钮，防止重复点击（显示“正在回答”）
     sendBtn.disabled = true;
     sendBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 正在回答...';
 
-    // 3. 把用户的问题显示到聊天框（右对齐的蓝色气泡）
-    addMessage(question, 'user');
+    // 添加用户消息（无高亮）
+    addMessage(question, 'user', false);
 
     try {
-        // 4. 调用后端接口（POST请求，传JSON格式的问题）
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: question })
         });
 
-        // 5. 解析后端返回的结果
         const result = await response.json();
-
-        // 6. 显示回答：成功就显示答案，失败显示错误提示
+        let answer = '';
         if (result.code === 200) {
-            addMessage(result.answer, 'system');
+            answer = result.answer;
         } else {
-            addMessage(`出错了：${result.msg}`, 'system');
+            answer = `出错了：${result.msg}`;
         }
+
+        // 添加助手消息（带关键词高亮）
+        addMessage(answer, 'system', true);
     } catch (error) {
-        // 网络错误/接口不通的提示
-        addMessage('抱歉，服务器连接失败，请检查后端是否启动！', 'system');
+        addMessage('抱歉，服务器连接失败，请检查后端是否启动！', 'system', false);
         console.error('接口调用失败：', error);
     } finally {
-        // 7. 恢复按钮状态，清空输入框，滚动到聊天框底部
         sendBtn.disabled = false;
         sendBtn.innerHTML = '<i class="bi bi-send"></i> 提问';
         questionInput.value = '';
@@ -54,22 +73,25 @@ async function sendQuestion() {
     }
 }
 
-// 辅助函数：往聊天框添加消息（区分用户/助手）
-function addMessage(content, type) {
+// 新增：添加消息（支持高亮）
+function addMessage(content, type, needHighlight = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}-message`;
-    messageDiv.textContent = content;
+    
+    // 如果需要高亮，先处理内容
+    if (needHighlight) {
+        messageDiv.innerHTML = highlightKeywords(content);
+    } else {
+        messageDiv.textContent = content;
+    }
+    
     chatBox.appendChild(messageDiv);
-    // 自动滚动到底部，显示最新消息
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// 绑定事件1：点击“提问”按钮发送问题
+// 绑定事件
 sendBtn.addEventListener('click', sendQuestion);
-
-// 绑定事件2：按回车键发送问题（更方便）
+clearBtn.addEventListener('click', clearChatHistory); // 绑定清空按钮
 questionInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        sendQuestion();
-    }
+    if (e.key === 'Enter') sendQuestion();
 });
