@@ -1,130 +1,220 @@
-const chatBox = document.getElementById('chatBox');
-const questionInput = document.getElementById('questionInput');
-const sendBtn = document.getElementById('sendBtn');
-const clearBtn = document.getElementById('clearBtn');
-const wordCount = document.getElementById('wordCount');
-const toast = document.getElementById('toast');
-const API_URL = 'http://localhost:5000/api/qa';
-const MAX_WORD_LENGTH = 100;
+document.addEventListener('DOMContentLoaded', function () {
+  const chatBox = document.getElementById('chatBox');
+  const questionInput = document.getElementById('questionInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const graphBtn = document.getElementById('graphBtn');
+  const toast = document.getElementById('toast');
+  const wordCount = document.getElementById('wordCount');
+  const graphModal = document.getElementById('graphModal');
 
-function getCurrentTime() {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-}
+  // 欢迎语
+  if (!localStorage.getItem('has_welcome')) {
+    addMessage('bot', '你好！我是医疗智能问答助手，你可以咨询感冒、咳嗽、发烧等常见健康问题。', false);
+    localStorage.setItem('has_welcome', 'true');
+  }
 
-function showToast(message, type = 'default', duration = 2000) {
-    toast.textContent = message;
-    toast.className = 'toast ' + type;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), duration);
-}
+  // 加载历史
+  loadChatHistory();
 
-function filterIllegalChars(text) {
-    return text.replace(/<[^>]*>/g, '').replace(/javascript:/gi, '');
-}
+  // 字数统计（改为1000字）
+  questionInput.addEventListener('input', () => {
+    wordCount.textContent = questionInput.value.length + '/1000';
+  });
 
-function createLoadingElement() {
-    const div = document.createElement('div');
-    div.className = 'message system-message';
-    div.innerHTML = `
-        <span class="message-content">正在思考中...</span>
-        <span class="message-time">${getCurrentTime()}</span>
-    `;
-    return div;
-}
+  // 发送
+  sendBtn.addEventListener('click', sendMessage);
+  questionInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+  });
 
-function clearChatHistory() {
-    chatBox.innerHTML = `
-        <div class="message system-message">
-            <span class="message-content">你好！我是医疗问答助手，请问有什么感冒相关的问题想要问我？</span>
-            <span class="message-time">${getCurrentTime()}</span>
-        </div>
-    `;
-    showToast('已清空聊天', 'success');
-}
+  // 清空
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('确定清空所有对话？')) return;
+    chatBox.innerHTML = '';
+    localStorage.removeItem('chat_history');
+    showToast('清空成功', 'success');
+  });
 
-function highlightKeywords(content) {
-    const keywords = ['感冒','症状','治疗','发烧','咳嗽','鼻塞','流涕','头痛','退烧药','抗生素'];
-    let res = content;
-    keywords.forEach(k => {
-        res = res.replace(new RegExp(k, 'g'), `<span class="highlight">${k}</span>`);
+  // 导出记录（去掉“复制”）
+  exportBtn.addEventListener('click', exportHistory);
+  function exportHistory() {
+    const history = localStorage.getItem('chat_history');
+    if (!history) { showToast('无对话记录', 'error'); return; }
+    const data = JSON.parse(history);
+    let text = '=== 医疗问答记录 ===\n';
+    data.forEach(item => {
+      // 过滤掉“复制”字样
+      const cleanText = item.text.replace(/复制/g, '').trim();
+      text += (item.role === 'user' ? '我' : '助手') + '：' + cleanText + '\n';
     });
-    return res;
-}
+    const blob = new Blob([text], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '对话记录.txt';
+    a.click();
+    showToast('导出成功', 'success');
+  }
 
-function addMessage(content, type, needHighlight = false) {
-    const div = document.createElement('div');
-    div.className = `message ${type}-message`;
-    const safe = filterIllegalChars(content);
-    const html = needHighlight ? highlightKeywords(safe) : safe;
-    div.innerHTML = `
-        <span class="message-content">${html}</span>
-        <span class="message-time">${getCurrentTime()}</span>
-    `;
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
-}
+  // 快捷标签
+  document.querySelectorAll('.tag-item').forEach(tag => {
+    tag.addEventListener('click', () => {
+      questionInput.value = tag.getAttribute('data-text');
+      sendMessage();
+    });
+  });
 
-async function sendQuestion() {
-    const q = questionInput.value.trim();
-    if (!q) {
-        showToast('请输入问题', 'error');
-        return;
-    }
+  // 发送请求
+  async function sendMessage() {
+    const question = questionInput.value.trim();
+    if (!question) { showToast('请输入问题', 'error'); return; }
 
-    sendBtn.disabled = true;
-    sendBtn.textContent = '正在回答...';
-    const loading = createLoadingElement();
-    chatBox.appendChild(loading);
+    addMessage('user', question);
+    questionInput.value = '';
+    wordCount.textContent = '0/1000';
 
-    addMessage(q, 'user');
+    const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
 
     try {
-        const res = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: q })
-        });
+      const res = await fetch('http://localhost:5000/api/qa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+      const data = await res.json();
+      chatBox.removeChild(loadingMsg);
 
-        const data = await res.json();
-        chatBox.removeChild(loading);
+      let ans = data.data || data.answer || data.msg || '查询成功';
+      if (ans === 'success') ans = '查询成功，已为你找到相关答案';
 
-        if (data.code === 200) {
-            addMessage(data.answer, 'system', true);
-        } else {
-            addMessage(data.msg || '出错了', 'system');
-        }
+      // --- 答案自动换行分段 ---
+      ans = ans
+        .replace(/(症状[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(治疗[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(用药[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(护理[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(建议[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(注意事项[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(预防[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(区别[:：])/g, '<div class="answer-item">$1</div>')
+        .replace(/(原因[:：])/g, '<div class="answer-item">$1</div>');
 
-    } catch (e) {
-        chatBox.removeChild(loading);
-        addMessage('服务器未启动或网络异常', 'system');
-        showToast('连接失败', 'error');
-    } finally {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = '<i class="bi bi-send"></i> 提问';
-        questionInput.value = '';
-        wordCount.textContent = `0/${MAX_WORD_LENGTH}`;
+      addMessage('bot', ans, true);
+    } catch (err) {
+      chatBox.removeChild(loadingMsg);
+      addMessage('bot', '后端服务未启动，请检查后重试', false);
+      showToast('请求失败', 'error');
     }
-}
+  }
 
-questionInput.addEventListener('input', () => {
-    const len = questionInput.value.length;
-    wordCount.textContent = `${len}/${MAX_WORD_LENGTH}`;
-});
+  // 高亮关键词
+  function highlight(content) {
+    const words = ['感冒','咳嗽','发烧','头痛','流感','药','治疗','症状','缓解','鼻塞','流涕','喉咙痛','儿童','孕期','预防'];
+    words.forEach(w => {
+      content = content.replaceAll(w, `<span class="highlight">${w}</span>`);
+    });
+    return content;
+  }
 
-sendBtn.addEventListener('click', sendQuestion);
-clearBtn.addEventListener('click', clearChatHistory);
+  // 添加消息
+  function addMessage(role, content, hasCopy = false) {
+    const div = document.createElement('div');
+    div.className = role === 'user' ? 'message user-message' : 'message system-message';
 
-questionInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        sendQuestion();
+    let copyBtn = '';
+    if (hasCopy) {
+      copyBtn = `<button class="copy-btn" onclick="window.copyMsg(this)" data-text="${encodeURI(content.replace(/<[^>]+>/g, ''))}">
+        <i class="bi bi-clipboard"></i> 复制
+      </button>`;
     }
-});
 
-window.onload = () => {
-    document.querySelector('.message-time').textContent = getCurrentTime();
-    showToast('欢迎使用医疗问答系统', 'success');
-};
+    div.innerHTML = `
+      <div>${highlight(content)}</div>
+      ${copyBtn}
+      <div class="message-time">${new Date().toLocaleTimeString()}</div>
+    `;
+
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    saveChatHistory();
+    return div;
+  }
+
+  // 复制
+  window.copyMsg = function (btn) {
+    navigator.clipboard.writeText(decodeURI(btn.dataset.text)).then(() => {
+      btn.innerHTML = '<i class="bi bi-check"></i> 已复制';
+      setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i> 复制', 1500);
+      showToast('复制成功', 'success');
+    });
+  };
+
+  // 存储
+  function saveChatHistory() {
+    const list = [];
+    document.querySelectorAll('.message').forEach(item => {
+      const role = item.classList.contains('user-message') ? 'user' : 'bot';
+      const text = item.innerText.replace(/\d+:\d+:\d+/g, '').trim();
+      if (text.includes('...')) return;
+      list.push({ role, text });
+    });
+    localStorage.setItem('chat_history', JSON.stringify(list));
+  }
+
+  // 读取
+  function loadChatHistory() {
+    const h = localStorage.getItem('chat_history');
+    if (!h) return;
+    chatBox.innerHTML = '';
+    JSON.parse(h).forEach(m => addMessage(m.role, m.text, m.role === 'bot'));
+  }
+
+  // 提示
+  function showToast(msg, type) {
+    toast.textContent = msg;
+    toast.className = `toast ${type} show`;
+    setTimeout(() => toast.className = 'toast', 2000);
+  }
+
+  // --- 修复知识图谱显示 ---
+  graphBtn.addEventListener('click', initGraph);
+  window.closeGraph = () => graphModal.classList.remove('show');
+  function initGraph() {
+    graphModal.classList.add('show');
+    setTimeout(() => {
+      const chart = echarts.init(document.getElementById('graphContainer'));
+      const option = {
+        tooltip: {},
+        series: [{
+          type: 'graph',
+          layout: 'force',
+          data: [
+            { name: '感冒', itemStyle: { color: '#36D399' } },
+            { name: '咳嗽' }, { name: '发烧' }, { name: '头痛' }, { name: '鼻塞' }, { name: '喉咙痛' },
+            { name: '布洛芬' }, { name: '对乙酰氨基酚' }, { name: '阿莫西林' },
+            { name: '多喝水' }, { name: '休息' }, { name: '通风' }, { name: '戴口罩' }
+          ],
+          links: [
+            { source: '感冒', target: '咳嗽' },
+            { source: '感冒', target: '发烧' },
+            { source: '感冒', target: '头痛' },
+            { source: '感冒', target: '鼻塞' },
+            { source: '感冒', target: '喉咙痛' },
+            { source: '感冒', target: '布洛芬' },
+            { source: '感冒', target: '对乙酰氨基酚' },
+            { source: '感冒', target: '阿莫西林' },
+            { source: '感冒', target: '多喝水' },
+            { source: '感冒', target: '休息' },
+            { source: '感冒预防', target: '通风' },
+            { source: '感冒预防', target: '戴口罩' }
+          ],
+          label: { show: true, fontSize: 12 },
+          force: { repulsion: 300, edgeLength: 80 }
+        }]
+      };
+      chart.setOption(option);
+      window.addEventListener('resize', () => chart.resize());
+    }, 100);
+  }
+});

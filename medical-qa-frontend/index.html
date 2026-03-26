@@ -14,22 +14,40 @@
         <div class="qa-header">
             <div class="header-left">
                 <h1><i class="bi bi-heart-pulse"></i> 医疗知识问答系统</h1>
-                <p>专注解答感冒相关医疗问题</p>
+                <p>智能医疗问答助手</p>
             </div>
-            <button id="clearBtn"><i class="bi bi-trash"></i> 清空历史</button>
+            <div class="header-buttons">
+                
+                <button id="exportBtn"><i class="bi bi-download"></i> 导出记录</button>
+                <button id="clearBtn"><i class="bi bi-trash"></i> 清空历史</button>
+            </div>
         </div>
 
-        <div class="qa-chat-box" id="chatBox">
-            <div class="message system-message">
-                <span class="message-content">你好！我是医疗问答助手，请问有什么感冒相关的问题想要问我？</span>
-                <span class="message-time"></span>
-            </div>
+        <div class="question-tags">
+            <!-- 扩充快捷提问，多主题 -->
+            <div class="tag-item" data-text="感冒的症状是什么">感冒症状</div>
+            <div class="tag-item" data-text="感冒怎么治疗">感冒治疗</div>
+            <div class="tag-item" data-text="感冒吃什么药">感冒用药</div>
+            <div class="tag-item" data-text="感冒和流感的区别">感冒与流感</div>
+            <div class="tag-item" data-text="咳嗽怎么缓解">咳嗽缓解</div>
+            <div class="tag-item" data-text="耳鸣的症状是什么">耳鸣症状</div>
+            <div class="tag-item" data-text="头晕是什么原因">头晕原因</div>
+            <div class="tag-item" data-text="鼻塞怎么快速通气">鼻塞缓解</div>
+            <div class="tag-item" data-text="喉咙痛可能患了什么疾病">喉咙痛疾病</div>
+        </div>
+
+        <div class="qa-chat-box" id="chatBox"></div>
+
+        <div class="status-bar">
+            <span class="status-online">✅ 服务正常运行</span>
+            <span>作者：熊锦帅 | 版本：v3.0</span>
         </div>
 
         <div class="qa-input-area">
             <div class="input-wrapper">
-                <input type="text" id="questionInput" placeholder="请输入你的问题（比如：感冒的症状是什么？）" maxlength="100">
-                <span class="word-count" id="wordCount">0/100</span>
+                <!-- 改为1000字限制 -->
+                <input type="text" id="questionInput" placeholder="请输入你的问题" maxlength="1000">
+                <span class="word-count" id="wordCount">0/1000</span>
             </div>
             <button id="sendBtn"><i class="bi bi-send"></i> 提问</button>
         </div>
@@ -39,6 +57,18 @@
         </div>
     </div>
 
+    <!-- 知识图谱弹窗 -->
+    <div class="modal" id="graphModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>知识图谱可视化</h3>
+                <button class="close-btn" onclick="closeGraph()">&times;</button>
+            </div>
+            <div id="graphContainer"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
