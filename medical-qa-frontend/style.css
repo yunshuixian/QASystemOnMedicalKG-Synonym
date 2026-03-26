@@ -273,3 +273,23 @@ body {
     .message { max-width: 90%; }
     .qa-chat-box { height: 400px; }
 }
+
+/* 语音朗读按钮 */
+.voice-btn {
+  background: #f0fdf4;
+  border: 1px solid #36D399;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 6px;
+  color: #25A173;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+.voice-btn:hover {
+  background: #36D399;
+  color: white;
+}
