@@ -59,47 +59,74 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  async function sendMessage() {
-    const question = questionInput.value.trim();
-    if (!question) { showToast('请输入问题', 'error'); return; }
+  // 全局保存上一轮的疾病实体（多轮对话用）
+let lastEntity = '';
 
-    addMessage('user', question);
-    questionInput.value = '';
-    wordCount.textContent = '0/1000';
-    document.getElementById('recommendWrapper').style.display = 'none';
+async function sendMessage() {
+  let question = questionInput.value.trim();
+  if (!question) { showToast('请输入问题', 'error'); return; }
 
-    const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
+  // ======================
+  // 多轮对话核心逻辑
+  // ======================
+  const entityKeywords = ['感冒', '咳嗽', '发烧', '喉咙痛', '头痛', '鼻塞', '耳鸣', '头晕'];
+  let currentEntity = '';
 
-    try {
-      const res = await fetch('http://localhost:5000/api/qa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question })
-      });
-      const data = await res.json();
-      chatBox.removeChild(loadingMsg);
-
-      let ans = data.data || data.answer || data.msg || '查询成功';
-      if (ans === 'success') ans = '查询成功，已为你找到相关答案';
-
-      ans = ans
-        .replace(/(症状[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(治疗[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(用药[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(护理[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(建议[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(注意事项[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(预防[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(区别[:：])/g, '<div class="answer-item">$1</div>')
-        .replace(/(原因[:：])/g, '<div class="answer-item">$1</div>');
-
-      addMessage('bot', ans, true);
-    } catch (err) {
-      chatBox.removeChild(loadingMsg);
-      addMessage('bot', '后端服务未启动，请检查后重试', false);
-      showToast('请求失败', 'error');
+  // 识别当前问题中的实体
+  for (let w of entityKeywords) {
+    if (question.includes(w)) {
+      currentEntity = w;
+      break;
     }
   }
+
+  // 如果当前问题没有主体，但有上一轮实体 → 自动补全
+  if (currentEntity === '' && lastEntity !== '') {
+    question = lastEntity + question;
+  }
+
+  // 更新上一轮实体
+  if (currentEntity !== '') {
+    lastEntity = currentEntity;
+  }
+
+  addMessage('user', questionInput.value.trim());
+  questionInput.value = '';
+  wordCount.textContent = '0/1000';
+  document.getElementById('recommendWrapper').style.display = 'none';
+
+  const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
+
+  try {
+    const res = await fetch('http://localhost:5000/api/qa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await res.json();
+    chatBox.removeChild(loadingMsg);
+
+    let ans = data.data || data.answer || data.msg || '查询成功';
+    if (ans === 'success') ans = '查询成功，已为你找到相关答案';
+
+    ans = ans
+      .replace(/(症状[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(治疗[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(用药[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(护理[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(建议[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(注意事项[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(预防[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(区别[:：])/g, '<div class="answer-item">$1</div>')
+      .replace(/(原因[:：])/g, '<div class="answer-item">$1</div>');
+
+    addMessage('bot', ans, true);
+  } catch (err) {
+    chatBox.removeChild(loadingMsg);
+    addMessage('bot', '后端服务未启动，请检查后重试', false);
+    showToast('请求失败', 'error');
+  }
+}
 
   function highlight(content) {
     const words = ['感冒','咳嗽','发烧','头痛','流感','药','治疗','症状','缓解','鼻塞','流涕','喉咙痛','儿童','孕期','预防'];
