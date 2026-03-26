@@ -39,9 +39,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const history = localStorage.getItem('chat_history');
     if (!history) { showToast('无对话记录', 'error'); return; }
     const data = JSON.parse(history);
-    let text = '=== 医疗问答记录 ===\n';
+    let text = '=== 医疗知识问答 ===\n';
     data.forEach(item => {
-      const cleanText = item.text.replace(/复制/g, '').replace(/朗读/g, '').replace(/正在朗读/g, '').trim();
+      const cleanText = item.text.replace(/复制|朗读|正在朗读/g, '').trim();
       text += (item.role === 'user' ? '我' : '助手') + '：' + cleanText + '\n';
     });
     const blob = new Blob([text], { type: 'text/plain' });
@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function () {
     addMessage('user', question);
     questionInput.value = '';
     wordCount.textContent = '0/1000';
+    document.getElementById('recommendWrapper').style.display = 'none';
 
     const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
 
@@ -155,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
       btn.innerHTML = '<i class="bi bi-volume-up"></i> 朗读';
       btn.classList.remove('playing');
       currentVoiceBtn = null;
-      showToast('已停止朗读', 'success');
+      showToast('已停止', 'success');
       return;
     }
 
@@ -186,7 +187,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const list = [];
     document.querySelectorAll('.message').forEach(item => {
       const role = item.classList.contains('user-message') ? 'user' : 'bot';
-      const text = item.innerText.replace(/\d+:\d+:\d+/g, '').trim();
+      const text = item.querySelector('div:first-child').innerText.trim();
       if (text.includes('...')) return;
       list.push({ role, text });
     });
@@ -245,4 +246,39 @@ document.addEventListener('DOMContentLoaded', function () {
       window.addEventListener('resize', () => chart.resize());
     }, 100);
   }
+
+  // 相似问题推荐
+  const recommendMap = {
+    感冒: ["感冒如何预防", "感冒不能吃什么", "感冒和流感区别"],
+    咳嗽: ["咳嗽吃什么缓解", "咳嗽多久需要就医", "干咳有痰区别"],
+    发烧: ["发烧如何物理降温", "发烧吃什么药", "持续发烧怎么办"],
+    喉咙痛: ["喉咙痛怎么缓解", "喉咙痛吃什么水果", "喉咙发炎怎么办"],
+    头痛: ["头痛快速缓解方法", "头痛常见原因", "头痛需要做什么检查"]
+  };
+
+  const recommendWrapper = document.getElementById("recommendWrapper");
+  const recommendList = document.getElementById("recommendList");
+
+  questionInput.addEventListener("input", function () {
+    const val = this.value.trim();
+    recommendList.innerHTML = "";
+    recommendWrapper.style.display = "none";
+
+    for (const key in recommendMap) {
+      if (val.includes(key)) {
+        recommendWrapper.style.display = "block";
+        recommendMap[key].forEach(item => {
+          const div = document.createElement("div");
+          div.className = "tag-item";
+          div.textContent = item;
+          div.onclick = () => {
+            questionInput.value = item;
+            recommendWrapper.style.display = "none";
+          };
+          recommendList.appendChild(div);
+        });
+        break;
+      }
+    }
+  });
 });

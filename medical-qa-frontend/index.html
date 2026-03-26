@@ -17,14 +17,13 @@
                 <p>智能医疗问答助手</p>
             </div>
             <div class="header-buttons">
-                
+                <button id="graphBtn"><i class="bi bi-diagram-3"></i> 知识图谱</button>
                 <button id="exportBtn"><i class="bi bi-download"></i> 导出记录</button>
                 <button id="clearBtn"><i class="bi bi-trash"></i> 清空历史</button>
             </div>
         </div>
 
         <div class="question-tags">
-            <!-- 扩充快捷提问，多主题 -->
             <div class="tag-item" data-text="感冒的症状是什么">感冒症状</div>
             <div class="tag-item" data-text="感冒怎么治疗">感冒治疗</div>
             <div class="tag-item" data-text="感冒吃什么药">感冒用药</div>
@@ -36,6 +35,8 @@
             <div class="tag-item" data-text="喉咙痛可能患了什么疾病">喉咙痛疾病</div>
         </div>
 
+        
+
         <div class="qa-chat-box" id="chatBox"></div>
 
         <div class="status-bar">
@@ -45,11 +46,16 @@
 
         <div class="qa-input-area">
             <div class="input-wrapper">
-                <!-- 改为1000字限制 -->
                 <input type="text" id="questionInput" placeholder="请输入你的问题" maxlength="1000">
                 <span class="word-count" id="wordCount">0/1000</span>
             </div>
             <button id="sendBtn"><i class="bi bi-send"></i> 提问</button>
+        </div>
+
+        <!-- 相似问题推荐 -->
+        <div id="recommendWrapper" style="display: none; padding: 8px 15px;">
+            <div style="font-size:12px; color:#666; margin-bottom:6px;">💡 相似问题推荐</div>
+            <div id="recommendList" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
         </div>
 
         <div class="qa-footer">
@@ -57,7 +63,6 @@
         </div>
     </div>
 
-    <!-- 知识图谱弹窗 -->
     <div class="modal" id="graphModal">
         <div class="modal-content">
             <div class="modal-header">
