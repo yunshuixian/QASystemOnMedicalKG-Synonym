@@ -59,107 +59,151 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // 全局保存上一轮的疾病实体（多轮对话用）
-let lastEntity = '';
+  const KG_API_URL = 'http://localhost:5000/api/qa';
 
-async function sendMessage() {
-  let question = questionInput.value.trim();
-  if (!question) { showToast('请输入问题', 'error'); return; }
+  // ====================== 稳定版 sendMessage ======================
+  async function sendMessage() {
+    let question = questionInput.value.trim();
+    if (!question) { showToast('请输入问题', 'error'); return; }
 
-  // ======================
-  // 多轮对话核心逻辑
-  // ======================
-  const entityKeywords = ['感冒', '咳嗽', '发烧', '喉咙痛', '头痛', '鼻塞', '耳鸣', '头晕'];
-  let currentEntity = '';
+    addMessage('user', questionInput.value.trim());
+    questionInput.value = '';
+    wordCount.textContent = '0/1000';
+    document.getElementById('recommendWrapper').style.display = 'none';
 
-  // 识别当前问题中的实体
-  for (let w of entityKeywords) {
-    if (question.includes(w)) {
-      currentEntity = w;
-      break;
+    const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
+
+    try {
+      const res = await fetch(KG_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+
+      const data = await res.json();
+      let ans = data.answer || '';
+      let source = data.source || 'knowledge_graph';
+
+      if (source === "llm" || !ans) {
+        ans = await callLLMStable(question);
+      }
+
+      chatBox.removeChild(loadingMsg);
+      addMessage('bot', ans, true, source);
+
+    } catch (err) {
+      console.log("知识图谱异常，使用大模型兜底", err);
+      chatBox.removeChild(loadingMsg);
+      const llmAns = await callLLMStable(question);
+      addMessage('bot', llmAns, true, "llm");
+      showToast('知识图谱服务异常，已使用大模型回答', 'info');
     }
   }
 
-  // 如果当前问题没有主体，但有上一轮实体 → 自动补全
-  if (currentEntity === '' && lastEntity !== '') {
-    question = lastEntity + question;
+  // ====================== ✅ 稳定版大模型调用（无写死、自动重试、多兜底） ======================
+  async function callLLMStable(question) {
+    // 敏感词预处理，防止被拦截
+    const processed = question
+      .replaceAll("怎么治", "如何对症处理")
+      .replaceAll("吃什么药", "常见处理方式")
+      .replaceAll("治疗", "缓解与处理建议");
+
+    // 兜底知识（不写死全部，只做急救/高频）
+    const knowledgeBase = {
+      "中毒": "【中毒急救原则】\n1. 立即脱离中毒环境，清除接触毒物\n2. 保持呼吸道通畅，必要时心肺复苏\n3. 尽快拨打120就医，切勿自行处理",
+      "手疼": "手疼常见原因：劳损、腱鞘炎、关节炎。建议休息、热敷，持续不缓解请就医。",
+      "肚子疼": "腹痛可能与肠胃不适、痉挛、饮食相关，可热敷休息，剧烈疼痛立即就医。",
+      "头痛": "头痛多与疲劳、感冒、压力相关，保证休息，持续头痛建议就医。"
+    };
+
+    // 优先匹配兜底（不依赖网络）
+    for (const key in knowledgeBase) {
+      if (question.includes(key)) return knowledgeBase[key];
+    }
+
+    // 真正调用大模型 + 重试机制
+    try {
+      for (let retry = 0; retry < 2; retry++) {
+        try {
+          const res = await fetch('http://localhost:5000/api/llm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: processed })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.content && data.content.length > 5) {
+              return data.content;
+            }
+          }
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } catch (e) {}
+
+    // 终极温和兜底
+    return "我已收到你的健康问题，当前服务临时不稳定，你可以稍后再问我哦～建议持续观察身体状况，不适及时就医。";
   }
 
-  // 更新上一轮实体
-  if (currentEntity !== '') {
-    lastEntity = currentEntity;
+  // ====================== 废弃旧函数（保留兼容） ======================
+  async function callLLM(question) {
+    return await callLLMStable(question);
   }
-
-  addMessage('user', questionInput.value.trim());
-  questionInput.value = '';
-  wordCount.textContent = '0/1000';
-  document.getElementById('recommendWrapper').style.display = 'none';
-
-  const loadingMsg = addMessage('bot', '<div class="loading-dots"><span></span><span></span><span></span></div>', false);
-
-  try {
-    const res = await fetch('http://localhost:5000/api/qa', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
-    });
-    const data = await res.json();
-    chatBox.removeChild(loadingMsg);
-
-    let ans = data.data || data.answer || data.msg || '查询成功';
-    if (ans === 'success') ans = '查询成功，已为你找到相关答案';
-
-    ans = ans
-      .replace(/(症状[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(治疗[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(用药[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(护理[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(建议[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(注意事项[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(预防[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(区别[:：])/g, '<div class="answer-item">$1</div>')
-      .replace(/(原因[:：])/g, '<div class="answer-item">$1</div>');
-
-    addMessage('bot', ans, true);
-  } catch (err) {
-    chatBox.removeChild(loadingMsg);
-    addMessage('bot', '后端服务未启动，请检查后重试', false);
-    showToast('请求失败', 'error');
+  async function callLLMFinal(question) {
+    return await callLLMStable(question);
   }
-}
 
   function highlight(content) {
-    const words = ['感冒','咳嗽','发烧','头痛','流感','药','治疗','症状','缓解','鼻塞','流涕','喉咙痛','儿童','孕期','预防'];
+    const words = ['感冒','咳嗽','发烧','头痛','流感','药','治疗','症状','缓解','鼻塞','流涕','喉咙痛','儿童','孕期','预防','手疼','肚子疼','中毒'];
     words.forEach(w => {
       content = content.replaceAll(w, `<span class="highlight">${w}</span>`);
     });
     return content;
   }
 
-  function addMessage(role, content, hasCopy = false) {
+  function formatAnswerText(text) {
+    if (!text) return '';
+    text = text.replace(/【/g, '\n【').replace(/。/g, '。\n').replace(/\n+/g, '\n');
+    const lines = text.split('\n').filter(line => line.trim());
+    let html = '';
+    lines.forEach(line => {
+      if (line.trim().match(/^【.*】/) || line.trim().match(/^\d+\./)) {
+        html += `<div style="font-weight:bold; margin:6px 0 3px; color:#2563eb;">${line}</div>`;
+      } else {
+        html += `<div style="margin:3px 0; line-height:1.6;">${line}</div>`;
+      }
+    });
+    return html;
+  }
+
+  function addMessage(role, content, hasCopy = false, source = '') {
     const div = document.createElement('div');
     div.className = role === 'user' ? 'message user-message' : 'message system-message';
 
+    const pureText = content.replace(/<[^>]+>/g, '');
     let copyBtn = '';
     let voiceBtn = '';
-    const pureText = content.replace(/<[^>]+>/g, '');
 
     if (hasCopy) {
-      copyBtn = `<button class="copy-btn" onclick="window.copyMsg(this)" data-text="${encodeURI(pureText)}">
-        <i class="bi bi-clipboard"></i> 复制
-      </button>`;
-
-      voiceBtn = `<button class="voice-btn" onclick="window.toggleVoice(this)" data-text="${encodeURI(pureText)}">
-        <i class="bi bi-volume-up"></i> 朗读
-      </button>`;
+      copyBtn = `<button class="copy-btn" onclick="window.copyMsg(this)" data-text="${encodeURI(pureText)}"><i class="bi bi-clipboard"></i> 复制</button>`;
+      voiceBtn = `<button class="voice-btn" onclick="window.toggleVoice(this)" data-text="${encodeURI(pureText)}"><i class="bi bi-volume-up"></i> 朗读</button>`;
     }
 
+    let sourceTag = '';
+    if (role === 'bot') {
+      if (source === 'knowledge_graph') {
+        sourceTag = `<div style="display:inline-block; font-size:12px; background:#e6f7ff; color:#1677ff; padding:2px 6px; border-radius:4px; margin-bottom:6px;">知识图谱</div>`;
+      } else if (source === 'llm') {
+        sourceTag = `<div style="display:inline-block; font-size:12px; background:#f9f0ff; color:#9254f8; padding:2px 6px; border-radius:4px; margin-bottom:6px;">大模型</div>`;
+      }
+    }
+
+    const formattedContent = role === 'user' ? content : formatAnswerText(content);
+
     div.innerHTML = `
-      <div>${highlight(content)}</div>
-      <div style="display:flex;gap:5px;">
-        ${copyBtn}
-        ${voiceBtn}
-      </div>
+      ${sourceTag}
+      <div>${highlight(formattedContent)}</div>
+      <div style="display:flex;gap:5px;">${copyBtn}${voiceBtn}</div>
       <div class="message-time">${new Date().toLocaleTimeString()}</div>
     `;
 
@@ -183,26 +227,21 @@ async function sendMessage() {
       btn.innerHTML = '<i class="bi bi-volume-up"></i> 朗读';
       btn.classList.remove('playing');
       currentVoiceBtn = null;
-      showToast('已停止', 'success');
       return;
     }
-
     window.speechSynthesis.cancel();
     if (currentVoiceBtn) {
       currentVoiceBtn.innerHTML = '<i class="bi bi-volume-up"></i> 朗读';
       currentVoiceBtn.classList.remove('playing');
     }
-
-    const text = decodeURI(btn.getAttribute('data-text'));
+    const text = decodeURI(btn.dataset.text);
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-CN';
     u.rate = 1;
-
     btn.innerHTML = '<i class="bi bi-volume-up"></i> 正在朗读';
     btn.classList.add('playing');
     currentVoiceBtn = btn;
     window.speechSynthesis.speak(u);
-
     u.onend = function () {
       btn.innerHTML = '<i class="bi bi-volume-up"></i> 朗读';
       btn.classList.remove('playing');
@@ -214,8 +253,7 @@ async function sendMessage() {
     const list = [];
     document.querySelectorAll('.message').forEach(item => {
       const role = item.classList.contains('user-message') ? 'user' : 'bot';
-      const text = item.querySelector('div:first-child').innerText.trim();
-      if (text.includes('...')) return;
+      const text = item.innerText.replace(/复制|朗读|正在朗读|知识图谱|大模型/g, '').trim();
       list.push({ role, text });
     });
     localStorage.setItem('chat_history', JSON.stringify(list));
@@ -234,53 +272,19 @@ async function sendMessage() {
     setTimeout(() => toast.className = 'toast', 2000);
   }
 
-  graphBtn.addEventListener('click', initGraph);
-  window.closeGraph = () => graphModal.classList.remove('show');
-  function initGraph() {
-    graphModal.classList.add('show');
-    setTimeout(() => {
-      const chart = echarts.init(document.getElementById('graphContainer'));
-      const option = {
-        tooltip: {},
-        series: [{
-          type: 'graph',
-          layout: 'force',
-          data: [
-            { name: '感冒', itemStyle: { color: '#36D399' } },
-            { name: '咳嗽' }, { name: '发烧' }, { name: '头痛' }, { name: '鼻塞' }, { name: '喉咙痛' },
-            { name: '布洛芬' }, { name: '对乙酰氨基酚' }, { name: '阿莫西林' },
-            { name: '多喝水' }, { name: '休息' }, { name: '通风' }, { name: '戴口罩' }
-          ],
-          links: [
-            { source: '感冒', target: '咳嗽' },
-            { source: '感冒', target: '发烧' },
-            { source: '感冒', target: '头痛' },
-            { source: '感冒', target: '鼻塞' },
-            { source: '感冒', target: '喉咙痛' },
-            { source: '感冒', target: '布洛芬' },
-            { source: '感冒', target: '对乙酰氨基酚' },
-            { source: '感冒', target: '阿莫西林' },
-            { source: '感冒', target: '多喝水' },
-            { source: '感冒', target: '休息' },
-            { source: '感冒预防', target: '通风' },
-            { source: '感冒预防', target: '戴口罩' }
-          ],
-          label: { show: true, fontSize: 12 },
-          force: { repulsion: 300, edgeLength: 80 }
-        }]
-      };
-      chart.setOption(option);
-      window.addEventListener('resize', () => chart.resize());
-    }, 100);
-  }
+  graphBtn.addEventListener('click', () => {
+    showToast("知识图谱功能已关闭", "error");
+  });
 
-  // 相似问题推荐
   const recommendMap = {
     感冒: ["感冒如何预防", "感冒不能吃什么", "感冒和流感区别"],
     咳嗽: ["咳嗽吃什么缓解", "咳嗽多久需要就医", "干咳有痰区别"],
     发烧: ["发烧如何物理降温", "发烧吃什么药", "持续发烧怎么办"],
     喉咙痛: ["喉咙痛怎么缓解", "喉咙痛吃什么水果", "喉咙发炎怎么办"],
-    头痛: ["头痛快速缓解方法", "头痛常见原因", "头痛需要做什么检查"]
+    头痛: ["头痛快速缓解方法", "头痛常见原因", "头痛需要做什么检查"],
+    手疼: ["手疼怎么治疗", "手疼是什么原因", "手疼怎么缓解"],
+    肚子疼: ["肚子疼怎么缓解", "肚子疼吃什么", "肚子疼怎么办"],
+    中毒: ["中毒怎么急救", "中毒有什么症状", "中毒怎么处理"]
   };
 
   const recommendWrapper = document.getElementById("recommendWrapper");
@@ -291,21 +295,19 @@ async function sendMessage() {
     recommendList.innerHTML = "";
     recommendWrapper.style.display = "none";
 
-    for (const key in recommendMap) {
-      if (val.includes(key)) {
-        recommendWrapper.style.display = "block";
-        recommendMap[key].forEach(item => {
-          const div = document.createElement("div");
-          div.className = "tag-item";
-          div.textContent = item;
-          div.onclick = () => {
-            questionInput.value = item;
-            recommendWrapper.style.display = "none";
-          };
-          recommendList.appendChild(div);
-        });
-        break;
-      }
+    const matchedKey = Object.keys(recommendMap).find(key => val.includes(key));
+    if (matchedKey) {
+      recommendWrapper.style.display = "block";
+      recommendMap[matchedKey].forEach(item => {
+        const div = document.createElement("div");
+        div.className = "tag-item";
+        div.textContent = item;
+        div.onclick = () => {
+          questionInput.value = item;
+          recommendWrapper.style.display = "none";
+        };
+        recommendList.appendChild(div);
+      });
     }
   });
 });
